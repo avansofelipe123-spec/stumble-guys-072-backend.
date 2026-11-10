@@ -1,0 +1,14 @@
+
+CREATE TABLE IF NOT EXISTS players (
+    id BIGSERIAL PRIMARY KEY,
+    nickname VARCHAR(24) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS tournaments (
+    id BIGSERIAL PRIMARY KEY,
+    name VARCHAR(80) NOT NULL,
+    description TEXT DEFAULT '',
+    status VARCHAR(20) DEFAULT 'pending',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
