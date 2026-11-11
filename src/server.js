@@ -4,8 +4,14 @@ const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
 
+const {
+    generateAccountToken,
+    hashToken,
+    validateToken
+} = require("./auth");
+
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
 
 const PORT = process.env.PORT || 3000;
 
@@ -16,7 +22,7 @@ const pool = new Pool({
         : false
 });
 
-// Executa automaticamente o schema.sql
+// Inicialização do banco
 async function initializeDatabase() {
     const schemaPath = path.join(
         __dirname,
@@ -26,12 +32,49 @@ async function initializeDatabase() {
     );
 
     const schema = fs.readFileSync(schemaPath, "utf8");
-
     await pool.query(schema);
 
     console.log("Banco de dados inicializado!");
 }
 
+// Autenticação dos jogadores
+async function accountAuth(req, res, next) {
+    try {
+        const authorization = req.headers.authorization || "";
+        const token = authorization.startsWith("Bearer ")
+            ? authorization.slice(7)
+            : "";
+
+        if (!validateToken(token)) {
+            return res.status(401).json({
+                error: "Invalid account token"
+            });
+        }
+
+        const result = await pool.query(
+            `SELECT id, nickname, tag_number, gems, tokens
+             FROM players
+             WHERE account_key = $1 AND is_bot = FALSE`,
+            [hashToken(token)]
+        );
+
+        if (!result.rows.length) {
+            return res.status(401).json({
+                error: "Account not found"
+            });
+        }
+
+        req.player = result.rows[0];
+        next();
+    } catch (error) {
+        console.error("Authentication error:", error);
+        res.status(500).json({
+            error: "Authentication failed"
+        });
+    }
+}
+
+// Autorização administrativa
 function adminAuth(req, res, next) {
     const key = process.env.ADMIN_API_KEY;
 
@@ -44,6 +87,7 @@ function adminAuth(req, res, next) {
     next();
 }
 
+// Página inicial
 app.get("/", (req, res) => {
     res.json({
         name: "Stumble Guys 0.72 Backend",
@@ -52,6 +96,7 @@ app.get("/", (req, res) => {
     });
 });
 
+// Verificar banco
 app.get("/health", async (req, res) => {
     try {
         await pool.query("SELECT 1");
@@ -68,6 +113,99 @@ app.get("/health", async (req, res) => {
     }
 });
 
+// Cadastro de conta
+app.post("/api/auth/register", async (req, res) => {
+    let token;
+
+    try {
+        token = generateAccountToken();
+        const accountKey = hashToken(token);
+
+        for (let attempt = 0; attempt < 30; attempt++) {
+            const tagNumber = require("crypto").randomInt(1000, 10000);
+
+            try {
+                const result = await pool.query(
+                    `INSERT INTO players
+                     (account_key, nickname, tag_number, gems, tokens)
+                     VALUES ($1, '.GG/SGxenon', $2, 100000, 5000)
+                     RETURNING id, nickname, tag_number, gems, tokens`,
+                    [accountKey, tagNumber]
+                );
+
+                return res.status(201).json({
+                    success: true,
+                    message: "Account created",
+                    token: token,
+                    player: result.rows[0]
+                });
+            } catch (error) {
+                if (error.code === "23505") {
+                    continue;
+                }
+
+                throw error;
+            }
+        }
+
+        return res.status(503).json({
+            error: "Could not generate a unique player number"
+        });
+    } catch (error) {
+        console.error("Registration error:", error);
+
+        res.status(500).json({
+            error: "Account registration failed"
+        });
+    }
+});
+
+// Login automático
+app.post("/api/auth/login", async (req, res) => {
+    try {
+        const { token } = req.body;
+
+        if (!validateToken(token)) {
+            return res.status(400).json({
+                error: "Invalid token"
+            });
+        }
+
+        const result = await pool.query(
+            `SELECT id, nickname, tag_number, gems, tokens
+             FROM players
+             WHERE account_key = $1 AND is_bot = FALSE`,
+            [hashToken(token)]
+        );
+
+        if (!result.rows.length) {
+            return res.status(401).json({
+                error: "Account not found"
+            });
+        }
+
+        res.json({
+            success: true,
+            player: result.rows[0]
+        });
+    } catch (error) {
+        console.error("Login error:", error);
+
+        res.status(500).json({
+            error: "Login failed"
+        });
+    }
+});
+
+// Dados da conta autenticada
+app.get("/api/me", accountAuth, (req, res) => {
+    res.json({
+        success: true,
+        player: req.player
+    });
+});
+
+// Consultar jogador (admin)
 app.get("/api/players/:id", adminAuth, async (req, res) => {
     try {
         const result = await pool.query(
@@ -89,6 +227,7 @@ app.get("/api/players/:id", adminAuth, async (req, res) => {
     }
 });
 
+// Alterar nickname (admin por enquanto)
 app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
     try {
         const { nick } = req.body;
@@ -128,6 +267,7 @@ app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
     }
 });
 
+// Criar torneio de gemas (admin por enquanto)
 app.post("/api/tournaments", adminAuth, async (req, res) => {
     try {
         const { name, description } = req.body;
@@ -161,6 +301,7 @@ app.post("/api/tournaments", adminAuth, async (req, res) => {
     }
 });
 
+// Listar torneios
 app.get("/api/tournaments", async (req, res) => {
     try {
         const result = await pool.query(
@@ -175,7 +316,7 @@ app.get("/api/tournaments", async (req, res) => {
     }
 });
 
-// Só inicia o servidor depois de preparar o banco
+// Iniciar servidor
 async function startServer() {
     try {
         await initializeDatabase();
