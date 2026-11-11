@@ -10,6 +10,8 @@ const {
     validateToken
 } = require("./auth");
 
+const { startDiscordBot } = require("./discord");
+
 const app = express();
 app.use(express.json({ limit: "32kb" }));
 
@@ -68,13 +70,14 @@ async function accountAuth(req, res, next) {
         next();
     } catch (error) {
         console.error("Authentication error:", error);
+
         res.status(500).json({
             error: "Authentication failed"
         });
     }
 }
 
-// Autorização administrativa
+// Autorização administrativa atual
 function adminAuth(req, res, next) {
     const key = process.env.ADMIN_API_KEY;
 
@@ -115,10 +118,8 @@ app.get("/health", async (req, res) => {
 
 // Cadastro de conta
 app.post("/api/auth/register", async (req, res) => {
-    let token;
-
     try {
-        token = generateAccountToken();
+        const token = generateAccountToken();
         const accountKey = hashToken(token);
 
         for (let attempt = 0; attempt < 30; attempt++) {
@@ -136,7 +137,7 @@ app.post("/api/auth/register", async (req, res) => {
                 return res.status(201).json({
                     success: true,
                     message: "Account created",
-                    token: token,
+                    token,
                     player: result.rows[0]
                 });
             } catch (error) {
@@ -316,16 +317,23 @@ app.get("/api/tournaments", async (req, res) => {
     }
 });
 
-// Iniciar servidor
+// Iniciar servidor e bot do Discord
 async function startServer() {
     try {
         await initializeDatabase();
+
+        if (process.env.DISCORD_BOT_TOKEN) {
+            await startDiscordBot();
+            console.log("Integração com Discord iniciada!");
+        } else {
+            console.log("Bot Discord ainda não configurado.");
+        }
 
         app.listen(PORT, "0.0.0.0", () => {
             console.log(`Backend running on port ${PORT}`);
         });
     } catch (error) {
-        console.error("Erro ao inicializar o banco:", error);
+        console.error("Erro ao iniciar o backend:", error);
         process.exit(1);
     }
 }
