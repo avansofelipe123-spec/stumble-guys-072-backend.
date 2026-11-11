@@ -1,3 +1,4 @@
+
 {
   "name": "stumble-guys-072-backend",
   "version": "1.0.0",
@@ -10,6 +11,7 @@
     "node": ">=20"
   },
   "dependencies": {
+    "discord.js": "^14.19.3",
     "express": "^5.1.0",
     "pg": "^8.16.3"
   }
