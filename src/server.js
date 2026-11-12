@@ -323,7 +323,7 @@ async function startServer() {
         await initializeDatabase();
 
         if (process.env.DISCORD_BOT_TOKEN) {
-            await startDiscordBot();
+            await startDiscordBot(pool);
             console.log("Integração com Discord iniciada!");
         } else {
             console.log("Bot Discord ainda não configurado.");
