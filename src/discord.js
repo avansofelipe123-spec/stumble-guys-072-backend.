@@ -11,76 +11,99 @@ const discord = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
+// COMANDOS DO SERVIDOR
 const commands = [
+    // TORNEIO ANTIGO
     new SlashCommandBuilder()
         .setName("create")
-        .setDescription("Criar torneio de gemas")
-        .addStringOption(option =>
-            option.setName("nome")
+        .setDescription("Criar torneio clássico antigo")
+        .addStringOption(o =>
+            o.setName("nome")
                 .setDescription("Nome do torneio")
                 .setRequired(true))
-        .addIntegerOption(option =>
-            option.setName("participantes")
-                .setDescription("Máximo de participantes")
+        .addStringOption(o =>
+            o.setName("imagem")
+                .setDescription("Link do banner")
+                .setRequired(false))
+        .addIntegerOption(o =>
+            o.setName("duracao")
+                .setDescription("Duração em dias")
                 .setRequired(true))
-        .addIntegerOption(option =>
-            option.setName("rodadas")
-                .setDescription("Quantidade de rodadas")
+        .addStringOption(o =>
+            o.setName("mapa")
+                .setDescription("Mapa do torneio")
                 .setRequired(true))
-        .addStringOption(option =>
-            option.setName("modo")
-                .setDescription("Modo do torneio")
-                .setRequired(true)
-                .addChoices(
-                    { name: "Solo", value: "solo" },
-                    { name: "Duos", value: "duos" }
-                )),
+        .addIntegerOption(o =>
+            o.setName("premio")
+                .setDescription("Prêmio do torneio")
+                .setRequired(true))
+        .addIntegerOption(o =>
+            o.setName("entrada")
+                .setDescription("Custo de entrada")
+                .setRequired(true)),
 
+    // GRUPO DE TORNEIOS ATUAIS
+    new SlashCommandBuilder()
+        .setName("t")
+        .setDescription("Sistema de torneios atuais")
+        .addSubcommand(sub =>
+            sub.setName("create")
+                .setDescription("Criar torneio de gemas")
+                .addStringOption(o =>
+                    o.setName("nome")
+                        .setDescription("Nome do torneio")
+                        .setRequired(true))
+                .addStringOption(o =>
+                    o.setName("banner")
+                        .setDescription("Link do banner")
+                        .setRequired(false))
+                .addIntegerOption(o =>
+                    o.setName("participantes")
+                        .setDescription("Máximo de participantes")
+                        .setRequired(true))
+                .addStringOption(o =>
+                    o.setName("mapas")
+                        .setDescription("Mapas separados por vírgula")
+                        .setRequired(true))
+                .addIntegerOption(o =>
+                    o.setName("rodadas")
+                        .setDescription("Quantidade de rodadas")
+                        .setRequired(true))
+                .addStringOption(o =>
+                    o.setName("modo")
+                        .setDescription("Modo do torneio")
+                        .setRequired(true)
+                        .addChoices(
+                            { name: "Solo", value: "solo" },
+                            { name: "Duos", value: "duos" }
+                        ))
+                .addStringOption(o =>
+                    o.setName("premios")
+                        .setDescription("Premiações por colocação")
+                        .setRequired(true))
+                .addStringOption(o =>
+                    o.setName("inicio")
+                        .setDescription("Minutos até começar ou data e horário")
+                        .setRequired(true))),
+
+    // ALTERAR NICKNAME
     new SlashCommandBuilder()
         .setName("player")
         .setDescription("Gerenciar jogadores")
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName("nick")
+        .addSubcommand(sub =>
+            sub.setName("nick")
                 .setDescription("Alterar nickname de um jogador")
-                .addIntegerOption(option =>
-                    option.setName("id")
+                .addIntegerOption(o =>
+                    o.setName("id")
                         .setDescription("ID do jogador")
                         .setRequired(true))
-                .addStringOption(option =>
-                    option.setName("nickname")
+                .addStringOption(o =>
+                    o.setName("nickname")
                         .setDescription("Novo nickname")
-                        .setRequired(true))),
-
-    new SlashCommandBuilder()
-        .setName("t")
-        .setDescription("Gerenciar torneios clássicos")
-        .addSubcommand(subcommand =>
-            subcommand
-                .setName("create")
-                .setDescription("Criar torneio clássico")
-                .addStringOption(option =>
-                    option.setName("nome")
-                        .setDescription("Nome do torneio")
-                        .setRequired(true))
-                .addIntegerOption(option =>
-                    option.setName("duracao")
-                        .setDescription("Duração em dias")
-                        .setRequired(true))
-                .addStringOption(option =>
-                    option.setName("mapa")
-                        .setDescription("Mapa do torneio")
-                        .setRequired(true))
-                .addIntegerOption(option =>
-                    option.setName("premio")
-                        .setDescription("Prêmio")
-                        .setRequired(true))
-                .addIntegerOption(option =>
-                    option.setName("entrada")
-                        .setDescription("Custo de entrada")
                         .setRequired(true)))
 ].map(command => command.toJSON());
 
+// REGISTRAR COMANDOS NO SERVIDOR
 async function registerCommands() {
     const rest = new REST({ version: "10" })
         .setToken(process.env.DISCORD_BOT_TOKEN);
@@ -96,6 +119,7 @@ async function registerCommands() {
     console.log("Comandos Slash registrados!");
 }
 
+// VERIFICAR CARGOS
 async function checkRole(userId, roleId) {
     if (!roleId) return false;
 
@@ -108,6 +132,7 @@ async function checkRole(userId, roleId) {
     return member.roles.cache.has(roleId);
 }
 
+// RECEBER COMANDOS
 discord.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
@@ -122,38 +147,50 @@ discord.on("interactionCreate", async interaction => {
             process.env.DISCORD_AUTHORIZED_ROLE_ID
         );
 
+        // /create: somente Dono
         if (
             interaction.commandName === "create" &&
-            !isOwner &&
-            !isAuthorized
+            !isOwner
         ) {
             return interaction.reply({
-                content: "Você não tem permissão para usar este comando.",
+                content: "Somente o Dono pode criar esse torneio.",
                 ephemeral: true
             });
         }
 
+        // /t create: Dono ou Autorizado
         if (
-            (interaction.commandName === "player" ||
-             interaction.commandName === "t") &&
+            interaction.commandName === "t" &&
+            !isOwner &&
+            !isAuthorized
+        ) {
+            return interaction.reply({
+                content: "Você não tem permissão para criar torneios de gemas.",
+                ephemeral: true
+            });
+        }
+
+        // /player nick: somente Dono
+        if (
+            interaction.commandName === "player" &&
             !isOwner
         ) {
             return interaction.reply({
-                content: "Somente o Dono pode usar este comando.",
+                content: "Somente o Dono pode alterar nicknames.",
                 ephemeral: true
             });
         }
 
         await interaction.reply({
-            content: "Comando reconhecido! A execução será conectada ao backend na próxima etapa.",
+            content: "Permissão confirmada! A execução será conectada ao backend na próxima etapa.",
             ephemeral: true
         });
 
     } catch (error) {
-        console.error("Erro no comando Discord:", error);
+        console.error("Erro ao verificar comando:", error);
 
         const response = {
-            content: "Ocorreu um erro ao verificar suas permissões.",
+            content: "Não foi possível verificar suas permissões.",
             ephemeral: true
         };
 
@@ -165,6 +202,7 @@ discord.on("interactionCreate", async interaction => {
     }
 });
 
+// INICIAR BOT
 async function startDiscordBot() {
     if (
         !process.env.DISCORD_BOT_TOKEN ||
