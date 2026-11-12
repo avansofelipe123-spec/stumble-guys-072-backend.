@@ -223,8 +223,7 @@ function collectMaps(interaction, rounds) {
     const maps = [];
 
     for (let i = 1; i <= 6; i++) {
-        const map = interaction.options
-            .getString(`mapa${i}`);
+        const map = interaction.options.getString(`mapa${i}`);
 
         if (i <= rounds && !map) {
             return {
@@ -260,15 +259,14 @@ function validBanner(url) {
     }
 }
 
-// /create - SALVAR TORNEIO CLÁSSICO
+// /create - TORNEIO CLÁSSICO
 async function handleClassic(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
 
     if (result.error) {
-        return interaction.reply({
-            content: result.error,
-            ephemeral: true
+        return interaction.editReply({
+            content: result.error
         });
     }
 
@@ -279,20 +277,16 @@ async function handleClassic(interaction) {
     const participants = interaction.options.getInteger("participantes");
 
     if (!name || name.length > 80) {
-        return interaction.reply({
-            content: "O nome deve ter entre 1 e 80 caracteres.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "O nome deve ter entre 1 e 80 caracteres."
         });
     }
 
     if (!validBanner(banner)) {
-        return interaction.reply({
-            content: "Informe um link válido para o banner.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "Informe um link válido para o banner."
         });
     }
-
-    await interaction.deferReply({ ephemeral: true });
 
     const rewards = {
         "1": prize
@@ -338,7 +332,7 @@ async function handleClassic(interaction) {
 
     const tournament = saved.rows[0];
 
-    await interaction.editReply({
+    return interaction.editReply({
         content:
             `**Torneio clássico criado e salvo!**\n\n` +
             `**ID:** ${tournament.id}\n` +
@@ -356,15 +350,14 @@ async function handleClassic(interaction) {
     });
 }
 
-// /t create - SALVAR TORNEIO DE GEMAS
+// /t create - TORNEIO DE GEMAS
 async function handleGems(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
 
     if (result.error) {
-        return interaction.reply({
-            content: result.error,
-            ephemeral: true
+        return interaction.editReply({
+            content: result.error
         });
     }
 
@@ -377,23 +370,20 @@ async function handleGems(interaction) {
     const mode = interaction.options.getString("modo");
 
     if (!name || name.length > 80) {
-        return interaction.reply({
-            content: "O nome deve ter entre 1 e 80 caracteres.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "O nome deve ter entre 1 e 80 caracteres."
         });
     }
 
     if (banner && !validBanner(banner)) {
-        return interaction.reply({
-            content: "Informe um link válido para o banner.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "Informe um link válido para o banner."
         });
     }
 
     if (registration > start) {
-        return interaction.reply({
-            content: "O tempo de inscrições não pode ser maior que o tempo até o início do torneio.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "O tempo de inscrições não pode ser maior que o tempo até o início do torneio."
         });
     }
 
@@ -414,8 +404,6 @@ async function handleGems(interaction) {
     const registrationEndsAt = new Date(
         Date.now() + registration * 60 * 1000
     );
-
-    await interaction.deferReply({ ephemeral: true });
 
     const saved = await pool.query(
         `INSERT INTO tournaments (
@@ -472,7 +460,7 @@ async function handleGems(interaction) {
         )
         .join("\n");
 
-    await interaction.editReply({
+    return interaction.editReply({
         content:
             `**Torneio de gemas criado e salvo!**\n\n` +
             `**ID:** ${tournament.id}\n` +
@@ -493,7 +481,7 @@ async function handleGems(interaction) {
     });
 }
 
-// /player nick - ALTERAR NICKNAME NO BANCO
+// /player nick - ALTERAR NICKNAME
 async function handlePlayerNick(interaction) {
     const playerId = interaction.options.getInteger("id");
     const nickname = interaction.options
@@ -501,13 +489,10 @@ async function handlePlayerNick(interaction) {
         .trim();
 
     if (nickname.length < 4 || nickname.length > 20) {
-        return interaction.reply({
-            content: "O nickname deve ter entre 4 e 20 caracteres.",
-            ephemeral: true
+        return interaction.editReply({
+            content: "O nickname deve ter entre 4 e 20 caracteres."
         });
     }
-
-    await interaction.deferReply({ ephemeral: true });
 
     const result = await pool.query(
         `UPDATE players
@@ -526,7 +511,7 @@ async function handlePlayerNick(interaction) {
 
     const player = result.rows[0];
 
-    await interaction.editReply({
+    return interaction.editReply({
         content:
             `**Nickname atualizado!**\n\n` +
             `**ID do jogador:** ${player.id}\n` +
@@ -539,6 +524,16 @@ discord.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
+        // RESPONDER IMEDIATAMENTE AO DISCORD
+        await interaction.deferReply({
+            ephemeral: true
+        });
+
+        console.log(
+            `Comando recebido: /${interaction.commandName} por ${interaction.user.tag}`
+        );
+
+        // VERIFICAR PERMISSÕES DEPOIS DA RESPOSTA INICIAL
         const {
             isOwner,
             isAuthorized
@@ -547,9 +542,8 @@ discord.on("interactionCreate", async interaction => {
         // /create: SOMENTE DONO
         if (interaction.commandName === "create") {
             if (!isOwner) {
-                return interaction.reply({
-                    content: "Somente o Dono pode criar torneios clássicos.",
-                    ephemeral: true
+                return interaction.editReply({
+                    content: "Somente o Dono pode criar torneios clássicos."
                 });
             }
 
@@ -559,9 +553,8 @@ discord.on("interactionCreate", async interaction => {
         // /t create: DONO OU AUTORIZADO
         if (interaction.commandName === "t") {
             if (!isOwner && !isAuthorized) {
-                return interaction.reply({
-                    content: "Você não tem permissão para criar torneios de gemas.",
-                    ephemeral: true
+                return interaction.editReply({
+                    content: "Você não tem permissão para criar torneios de gemas."
                 });
             }
 
@@ -573,9 +566,8 @@ discord.on("interactionCreate", async interaction => {
         // /player nick: SOMENTE DONO
         if (interaction.commandName === "player") {
             if (!isOwner) {
-                return interaction.reply({
-                    content: "Somente o Dono pode alterar nicknames.",
-                    ephemeral: true
+                return interaction.editReply({
+                    content: "Somente o Dono pode alterar nicknames."
                 });
             }
 
@@ -584,18 +576,25 @@ discord.on("interactionCreate", async interaction => {
             }
         }
 
+        return interaction.editReply({
+            content: "Comando não reconhecido."
+        });
+
     } catch (error) {
         console.error("Erro ao executar comando:", error);
 
-        const response = {
-            content: "Ocorreu um erro ao executar o comando. Verifique os logs do backend.",
-            ephemeral: true
-        };
+        const message =
+            "Ocorreu um erro ao executar o comando. Verifique os logs do backend.";
 
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp(response).catch(() => {});
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply({
+                content: message
+            }).catch(console.error);
         } else {
-            await interaction.reply(response).catch(() => {});
+            await interaction.reply({
+                content: message,
+                ephemeral: true
+            }).catch(console.error);
         }
     }
 });
