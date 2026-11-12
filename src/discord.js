@@ -11,64 +11,94 @@ const discord = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// COMANDOS DO SERVIDOR
-const commands = [
-    // TORNEIO ANTIGO
+// OPÇÕES DE MAPAS
+function addMapOptions(command) {
+    for (let i = 1; i <= 6; i++) {
+        command.addStringOption(option =>
+            option
+                .setName(`mapa${i}`)
+                .setDescription(`Mapa da rodada ${i}`)
+                .setRequired(false)
+        );
+    }
+
+    return command;
+}
+
+// TORNEIO CLÁSSICO
+const classicCommand = addMapOptions(
     new SlashCommandBuilder()
         .setName("create")
-        .setDescription("Criar torneio clássico antigo")
+        .setDescription("Criar torneio clássico")
+        .addStringOption(o =>
+            o.setName("banner")
+                .setDescription("Link do banner")
+                .setRequired(true))
         .addStringOption(o =>
             o.setName("nome")
                 .setDescription("Nome do torneio")
                 .setRequired(true))
-        .addStringOption(o =>
-            o.setName("imagem")
-                .setDescription("Link do banner")
-                .setRequired(false))
-        .addIntegerOption(o =>
-            o.setName("duracao")
-                .setDescription("Duração em dias")
-                .setRequired(true))
-        .addStringOption(o =>
-            o.setName("mapa")
-                .setDescription("Mapa do torneio")
-                .setRequired(true))
-        .addIntegerOption(o =>
-            o.setName("premio")
-                .setDescription("Prêmio do torneio")
-                .setRequired(true))
         .addIntegerOption(o =>
             o.setName("entrada")
                 .setDescription("Custo de entrada")
-                .setRequired(true)),
+                .setMinValue(0)
+                .setRequired(true))
+        .addIntegerOption(o =>
+            o.setName("premio")
+                .setDescription("Prêmio do vencedor")
+                .setMinValue(0)
+                .setRequired(true))
+        .addIntegerOption(o =>
+            o.setName("rodadas")
+                .setDescription("Quantidade de rodadas")
+                .setMinValue(1)
+                .setMaxValue(6)
+                .setRequired(true))
+        .addIntegerOption(o =>
+            o.setName("participantes")
+                .setDescription("Número máximo de jogadores")
+                .setMinValue(2)
+                .setRequired(true))
+);
 
-    // GRUPO DE TORNEIOS ATUAIS
+// TORNEIO DE GEMAS
+const gemsCommand = addMapOptions(
     new SlashCommandBuilder()
         .setName("t")
-        .setDescription("Sistema de torneios atuais")
+        .setDescription("Sistema de torneios de gemas")
         .addSubcommand(sub =>
             sub.setName("create")
                 .setDescription("Criar torneio de gemas")
+
                 .addStringOption(o =>
                     o.setName("nome")
                         .setDescription("Nome do torneio")
                         .setRequired(true))
-                .addStringOption(o =>
-                    o.setName("banner")
-                        .setDescription("Link do banner")
-                        .setRequired(false))
+
                 .addIntegerOption(o =>
                     o.setName("participantes")
                         .setDescription("Máximo de participantes")
+                        .setMinValue(2)
                         .setRequired(true))
-                .addStringOption(o =>
-                    o.setName("mapas")
-                        .setDescription("Mapas separados por vírgula")
-                        .setRequired(true))
+
                 .addIntegerOption(o =>
-                    o.setName("rodadas")
-                        .setDescription("Quantidade de rodadas")
+                    o.setName("inicio")
+                        .setDescription("Minutos até o início do torneio")
+                        .setMinValue(1)
                         .setRequired(true))
+
+                .addIntegerOption(o =>
+                    o.setName("inscricoes")
+                        .setDescription("Duração das inscrições em minutos")
+                        .setMinValue(1)
+                        .setRequired(true))
+
+                .addIntegerOption(o =>
+                    o.setName("entrada")
+                        .setDescription("Custo da inscrição em gemas")
+                        .setMinValue(0)
+                        .setRequired(true))
+
                 .addStringOption(o =>
                     o.setName("modo")
                         .setDescription("Modo do torneio")
@@ -77,33 +107,65 @@ const commands = [
                             { name: "Solo", value: "solo" },
                             { name: "Duos", value: "duos" }
                         ))
-                .addStringOption(o =>
-                    o.setName("premios")
-                        .setDescription("Premiações por colocação")
-                        .setRequired(true))
-                .addStringOption(o =>
-                    o.setName("inicio")
-                        .setDescription("Minutos até começar ou data e horário")
-                        .setRequired(true))),
 
-    // ALTERAR NICKNAME
-    new SlashCommandBuilder()
-        .setName("player")
-        .setDescription("Gerenciar jogadores")
-        .addSubcommand(sub =>
-            sub.setName("nick")
-                .setDescription("Alterar nickname de um jogador")
                 .addIntegerOption(o =>
-                    o.setName("id")
-                        .setDescription("ID do jogador")
+                    o.setName("top1")
+                        .setDescription("Prêmio do primeiro lugar")
+                        .setMinValue(0)
                         .setRequired(true))
-                .addStringOption(o =>
-                    o.setName("nickname")
-                        .setDescription("Novo nickname")
-                        .setRequired(true)))
-].map(command => command.toJSON());
 
-// REGISTRAR COMANDOS NO SERVIDOR
+                .addIntegerOption(o =>
+                    o.setName("rodadas")
+                        .setDescription("Quantidade de rodadas")
+                        .setMinValue(1)
+                        .setMaxValue(6)
+                        .setRequired(true))
+
+                // BANNER OPCIONAL
+                .addStringOption(o =>
+                    o.setName("banner")
+                        .setDescription("Link do banner")
+                        .setRequired(false))
+
+                // PREMIAÇÕES OPCIONAIS
+                ...Array.from({ length: 9 }, (_, i) => {
+                    const position = i + 2;
+
+                    return option =>
+                        option
+                            .setName(`top${position}`)
+                            .setDescription(`Prêmio do ${position}º lugar`)
+                            .setMinValue(0)
+                            .setRequired(false);
+                })
+        )
+);
+
+// JOGADORES
+const playerCommand = new SlashCommandBuilder()
+    .setName("player")
+    .setDescription("Gerenciar jogadores")
+    .addSubcommand(sub =>
+        sub.setName("nick")
+            .setDescription("Alterar nickname")
+            .addIntegerOption(o =>
+                o.setName("id")
+                    .setDescription("ID do jogador")
+                    .setRequired(true))
+            .addStringOption(o =>
+                o.setName("nickname")
+                    .setDescription("Novo nickname")
+                    .setRequired(true))
+    );
+
+// LISTA DE COMANDOS
+const commands = [
+    classicCommand.toJSON(),
+    gemsCommand.toJSON(),
+    playerCommand.toJSON()
+];
+
+// REGISTRAR COMANDOS
 async function registerCommands() {
     const rest = new REST({ version: "10" })
         .setToken(process.env.DISCORD_BOT_TOKEN);
@@ -120,16 +182,126 @@ async function registerCommands() {
 }
 
 // VERIFICAR CARGOS
-async function checkRole(userId, roleId) {
-    if (!roleId) return false;
+function hasRole(interaction, roleId) {
+    if (!roleId || !interaction.inGuild()) {
+        return false;
+    }
 
-    const guild = await discord.guilds.fetch(
-        process.env.DISCORD_GUILD_ID
-    );
+    const roles = interaction.member?.roles ?? [];
+    return roles.includes(roleId);
+}
 
-    const member = await guild.members.fetch(userId);
+// VALIDAR MAPAS
+function collectMaps(interaction, rounds) {
+    const maps = [];
 
-    return member.roles.cache.has(roleId);
+    for (let i = 1; i <= 6; i++) {
+        const map = interaction.options.getString(`mapa${i}`);
+
+        if (i <= rounds && !map) {
+            return {
+                error: `Você precisa informar o mapa da rodada ${i}.`
+            };
+        }
+
+        if (i > rounds && map) {
+            return {
+                error: `Você escolheu ${rounds} rodadas. Não informe o mapa ${i}.`
+            };
+        }
+
+        if (map) {
+            maps.push(map);
+        }
+    }
+
+    return { maps };
+}
+
+// COMANDO CLÁSSICO
+async function handleClassic(interaction) {
+    const rounds = interaction.options.getInteger("rodadas");
+    const result = collectMaps(interaction, rounds);
+
+    if (result.error) {
+        return interaction.reply({
+            content: result.error,
+            ephemeral: true
+        });
+    }
+
+    const name = interaction.options.getString("nome");
+    const banner = interaction.options.getString("banner");
+    const entry = interaction.options.getInteger("entrada");
+    const prize = interaction.options.getInteger("premio");
+    const participants = interaction.options.getInteger("participantes");
+
+    return interaction.reply({
+        content:
+            `**Torneio clássico configurado!**\n\n` +
+            `**Nome:** ${name}\n` +
+            `**Banner:** ${banner}\n` +
+            `**Entrada:** ${entry}\n` +
+            `**Prêmio:** ${prize}\n` +
+            `**Participantes:** ${participants}\n` +
+            `**Rodadas:** ${rounds}\n` +
+            result.maps.map((map, i) =>
+                `**Rodada ${i + 1}:** ${map}`
+            ).join("\n") +
+            `\n\nConfiguração recebida. A gravação no banco será conectada na próxima etapa.`,
+        ephemeral: true
+    });
+}
+
+// COMANDO DE GEMAS
+async function handleGems(interaction) {
+    const rounds = interaction.options.getInteger("rodadas");
+    const result = collectMaps(interaction, rounds);
+
+    if (result.error) {
+        return interaction.reply({
+            content: result.error,
+            ephemeral: true
+        });
+    }
+
+    const name = interaction.options.getString("nome");
+    const banner = interaction.options.getString("banner");
+    const participants = interaction.options.getInteger("participantes");
+    const start = interaction.options.getInteger("inicio");
+    const registration = interaction.options.getInteger("inscricoes");
+    const entry = interaction.options.getInteger("entrada");
+    const mode = interaction.options.getString("modo");
+
+    const rewards = [];
+
+    for (let i = 1; i <= 10; i++) {
+        const reward = interaction.options.getInteger(`top${i}`);
+
+        if (i === 1 || reward !== null) {
+            rewards.push(`**Top ${i}:** ${reward} gemas`);
+        }
+    }
+
+    return interaction.reply({
+        content:
+            `**Torneio de gemas configurado!**\n\n` +
+            `**Nome:** ${name}\n` +
+            `**Banner:** ${banner ?? "Não informado"}\n` +
+            `**Participantes:** ${participants}\n` +
+            `**Início:** ${start} minutos\n` +
+            `**Inscrições abertas:** ${registration} minutos\n` +
+            `**Entrada:** ${entry} gemas\n` +
+            `**Modo:** ${mode}\n` +
+            `**Rodadas:** ${rounds}\n\n` +
+            `**Premiações:**\n${rewards.join("\n")}\n\n` +
+            `**Mapas:**\n` +
+            result.maps.map((map, i) =>
+                `**Rodada ${i + 1}:** ${map}`
+            ).join("\n") +
+            `\n\nConfiguração recebida. A gravação no banco será conectada na próxima etapa.`,
+        ephemeral: true
+    });
 }
 
 // RECEBER COMANDOS
@@ -137,60 +309,62 @@ discord.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
-        const isOwner = await checkRole(
-            interaction.user.id,
+        const isOwner = hasRole(
+            interaction,
             process.env.DISCORD_OWNER_ROLE_ID
         );
 
-        const isAuthorized = await checkRole(
-            interaction.user.id,
+        const isAuthorized = hasRole(
+            interaction,
             process.env.DISCORD_AUTHORIZED_ROLE_ID
         );
 
-        // /create: somente Dono
-        if (
-            interaction.commandName === "create" &&
-            !isOwner
-        ) {
+        // /create: SOMENTE DONO
+        if (interaction.commandName === "create") {
+            if (!isOwner) {
+                return interaction.reply({
+                    content: "Somente o Dono pode criar torneios clássicos.",
+                    ephemeral: true
+                });
+            }
+
+            return await handleClassic(interaction);
+        }
+
+        // /t create: DONO OU AUTORIZADO
+        if (interaction.commandName === "t") {
+            if (!isOwner && !isAuthorized) {
+                return interaction.reply({
+                    content: "Você não tem permissão para criar torneios de gemas.",
+                    ephemeral: true
+                });
+            }
+
+            if (interaction.options.getSubcommand() === "create") {
+                return await handleGems(interaction);
+            }
+        }
+
+        // /player nick: SOMENTE DONO
+        if (interaction.commandName === "player") {
+            if (!isOwner) {
+                return interaction.reply({
+                    content: "Somente o Dono pode alterar nicknames.",
+                    ephemeral: true
+                });
+            }
+
             return interaction.reply({
-                content: "Somente o Dono pode criar esse torneio.",
+                content: "Comando recebido. A alteração do nickname será conectada ao banco na próxima etapa.",
                 ephemeral: true
             });
         }
-
-        // /t create: Dono ou Autorizado
-        if (
-            interaction.commandName === "t" &&
-            !isOwner &&
-            !isAuthorized
-        ) {
-            return interaction.reply({
-                content: "Você não tem permissão para criar torneios de gemas.",
-                ephemeral: true
-            });
-        }
-
-        // /player nick: somente Dono
-        if (
-            interaction.commandName === "player" &&
-            !isOwner
-        ) {
-            return interaction.reply({
-                content: "Somente o Dono pode alterar nicknames.",
-                ephemeral: true
-            });
-        }
-
-        await interaction.reply({
-            content: "Permissão confirmada! A execução será conectada ao backend na próxima etapa.",
-            ephemeral: true
-        });
 
     } catch (error) {
-        console.error("Erro ao verificar comando:", error);
+        console.error("Erro ao executar comando:", error);
 
         const response = {
-            content: "Não foi possível verificar suas permissões.",
+            content: "Ocorreu um erro ao processar o comando.",
             ephemeral: true
         };
 
