@@ -11,6 +11,8 @@ const discord = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
+let pool = null;
+
 // ADICIONAR MAPAS
 function addMapOptions(command) {
     for (let i = 1; i <= 6; i++) {
@@ -40,12 +42,12 @@ const classicCommand = addMapOptions(
                 .setRequired(true))
         .addIntegerOption(o =>
             o.setName("entrada")
-                .setDescription("Custo de entrada")
+                .setDescription("Custo de entrada em gemas")
                 .setMinValue(0)
                 .setRequired(true))
         .addIntegerOption(o =>
             o.setName("premio")
-                .setDescription("Prêmio do vencedor")
+                .setDescription("Prêmio do vencedor em gemas")
                 .setMinValue(0)
                 .setRequired(true))
         .addIntegerOption(o =>
@@ -126,7 +128,6 @@ const gemsCommand = new SlashCommandBuilder()
                     .setDescription("Link do banner")
                     .setRequired(false));
 
-        // TOP 2 ATÉ TOP 10
         for (let i = 2; i <= 10; i++) {
             command.addIntegerOption(o =>
                 o.setName(`top${i}`)
@@ -189,11 +190,9 @@ async function getPermissions(interaction) {
 
     const guild = interaction.guild;
 
-    // O proprietário do servidor é reconhecido automaticamente
     const isServerOwner =
         interaction.user.id === guild.ownerId;
 
-    // Buscar os cargos atuais do membro
     const member = await guild.members.fetch(
         interaction.user.id
     );
@@ -224,7 +223,8 @@ function collectMaps(interaction, rounds) {
     const maps = [];
 
     for (let i = 1; i <= 6; i++) {
-        const map = interaction.options.getString(`mapa${i}`);
+        const map = interaction.options
+            .getString(`mapa${i}`);
 
         if (i <= rounds && !map) {
             return {
@@ -238,13 +238,29 @@ function collectMaps(interaction, rounds) {
             };
         }
 
-        if (map) maps.push(map);
+        if (map) {
+            maps.push(map.trim());
+        }
     }
 
     return { maps };
 }
 
-// /create - TORNEIO CLÁSSICO
+// VALIDAR LINK DO BANNER
+function validBanner(url) {
+    try {
+        const parsed = new URL(url);
+
+        return (
+            parsed.protocol === "https:" ||
+            parsed.protocol === "http:"
+        );
+    } catch {
+        return false;
+    }
+}
+
+// /create - SALVAR TORNEIO CLÁSSICO
 async function handleClassic(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -256,30 +272,91 @@ async function handleClassic(interaction) {
         });
     }
 
-    const name = interaction.options.getString("nome");
+    const name = interaction.options.getString("nome").trim();
     const banner = interaction.options.getString("banner");
     const entry = interaction.options.getInteger("entrada");
     const prize = interaction.options.getInteger("premio");
     const participants = interaction.options.getInteger("participantes");
 
-    return interaction.reply({
+    if (!name || name.length > 80) {
+        return interaction.reply({
+            content: "O nome deve ter entre 1 e 80 caracteres.",
+            ephemeral: true
+        });
+    }
+
+    if (!validBanner(banner)) {
+        return interaction.reply({
+            content: "Informe um link válido para o banner.",
+            ephemeral: true
+        });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const rewards = {
+        "1": prize
+    };
+
+    const saved = await pool.query(
+        `INSERT INTO tournaments (
+            tournament_type,
+            name,
+            image_url,
+            max_players,
+            selected_maps,
+            rounds,
+            entry_cost,
+            first_place_gems,
+            position_rewards,
+            status
+        )
+        VALUES (
+            'classic',
+            $1,
+            $2,
+            $3,
+            $4::jsonb,
+            $5,
+            $6,
+            $7,
+            $8::jsonb,
+            'pending'
+        )
+        RETURNING id, name, status`,
+        [
+            name,
+            banner,
+            participants,
+            JSON.stringify(result.maps),
+            rounds,
+            entry,
+            prize,
+            JSON.stringify(rewards)
+        ]
+    );
+
+    const tournament = saved.rows[0];
+
+    await interaction.editReply({
         content:
-            `**Torneio clássico configurado!**\n\n` +
-            `**Nome:** ${name}\n` +
+            `**Torneio clássico criado e salvo!**\n\n` +
+            `**ID:** ${tournament.id}\n` +
+            `**Nome:** ${tournament.name}\n` +
             `**Banner:** ${banner}\n` +
-            `**Entrada:** ${entry}\n` +
-            `**Prêmio:** ${prize}\n` +
+            `**Entrada:** ${entry} gemas\n` +
+            `**Prêmio:** ${prize} gemas\n` +
             `**Participantes:** ${participants}\n` +
             `**Rodadas:** ${rounds}\n\n` +
+            `**Mapas:**\n` +
             result.maps.map((map, i) =>
                 `**Rodada ${i + 1}:** ${map}`
             ).join("\n") +
-            `\n\nConfiguração recebida. Ainda falta conectar ao banco de dados.`,
-        ephemeral: true
+            `\n\n**Status:** Pendente`
     });
 }
 
-// /t create - TORNEIO DE GEMAS
+// /t create - SALVAR TORNEIO DE GEMAS
 async function handleGems(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -291,7 +368,7 @@ async function handleGems(interaction) {
         });
     }
 
-    const name = interaction.options.getString("nome");
+    const name = interaction.options.getString("nome").trim();
     const banner = interaction.options.getString("banner");
     const participants = interaction.options.getInteger("participantes");
     const start = interaction.options.getInteger("inicio");
@@ -299,34 +376,161 @@ async function handleGems(interaction) {
     const entry = interaction.options.getInteger("entrada");
     const mode = interaction.options.getString("modo");
 
-    const rewards = [];
+    if (!name || name.length > 80) {
+        return interaction.reply({
+            content: "O nome deve ter entre 1 e 80 caracteres.",
+            ephemeral: true
+        });
+    }
+
+    if (banner && !validBanner(banner)) {
+        return interaction.reply({
+            content: "Informe um link válido para o banner.",
+            ephemeral: true
+        });
+    }
+
+    if (registration > start) {
+        return interaction.reply({
+            content: "O tempo de inscrições não pode ser maior que o tempo até o início do torneio.",
+            ephemeral: true
+        });
+    }
+
+    const rewards = {};
 
     for (let i = 1; i <= 10; i++) {
         const reward = interaction.options.getInteger(`top${i}`);
 
         if (reward !== null) {
-            rewards.push(`**Top ${i}:** ${reward} gemas`);
+            rewards[String(i)] = reward;
         }
     }
 
-    return interaction.reply({
+    const startsAt = new Date(
+        Date.now() + start * 60 * 1000
+    );
+
+    const registrationEndsAt = new Date(
+        Date.now() + registration * 60 * 1000
+    );
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const saved = await pool.query(
+        `INSERT INTO tournaments (
+            tournament_type,
+            name,
+            image_url,
+            max_players,
+            selected_maps,
+            rounds,
+            team_mode,
+            starts_at,
+            registration_ends_at,
+            entry_cost,
+            first_place_gems,
+            position_rewards,
+            status
+        )
+        VALUES (
+            'gems',
+            $1,
+            $2,
+            $3,
+            $4::jsonb,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            $10,
+            $11::jsonb,
+            'pending'
+        )
+        RETURNING id, name, status, starts_at, registration_ends_at`,
+        [
+            name,
+            banner || null,
+            participants,
+            JSON.stringify(result.maps),
+            rounds,
+            mode,
+            startsAt,
+            registrationEndsAt,
+            entry,
+            rewards["1"],
+            JSON.stringify(rewards)
+        ]
+    );
+
+    const tournament = saved.rows[0];
+
+    const rewardText = Object.entries(rewards)
+        .map(([position, amount]) =>
+            `**Top ${position}:** ${amount} gemas`
+        )
+        .join("\n");
+
+    await interaction.editReply({
         content:
-            `**Torneio de gemas configurado!**\n\n` +
-            `**Nome:** ${name}\n` +
-            `**Banner:** ${banner ?? "Não informado"}\n` +
+            `**Torneio de gemas criado e salvo!**\n\n` +
+            `**ID:** ${tournament.id}\n` +
+            `**Nome:** ${tournament.name}\n` +
+            `**Banner:** ${banner || "Não informado"}\n` +
             `**Participantes:** ${participants}\n` +
             `**Início:** ${start} minutos\n` +
             `**Inscrições:** ${registration} minutos\n` +
             `**Entrada:** ${entry} gemas\n` +
             `**Modo:** ${mode}\n` +
             `**Rodadas:** ${rounds}\n\n` +
-            `**Premiações:**\n${rewards.join("\n")}\n\n` +
+            `**Premiações:**\n${rewardText}\n\n` +
             `**Mapas:**\n` +
             result.maps.map((map, i) =>
                 `**Rodada ${i + 1}:** ${map}`
             ).join("\n") +
-            `\n\nConfiguração recebida. Ainda falta conectar ao banco de dados.`,
-        ephemeral: true
+            `\n\n**Status:** Pendente`
+    });
+}
+
+// /player nick - ALTERAR NICKNAME NO BANCO
+async function handlePlayerNick(interaction) {
+    const playerId = interaction.options.getInteger("id");
+    const nickname = interaction.options
+        .getString("nickname")
+        .trim();
+
+    if (nickname.length < 4 || nickname.length > 20) {
+        return interaction.reply({
+            content: "O nickname deve ter entre 4 e 20 caracteres.",
+            ephemeral: true
+        });
+    }
+
+    await interaction.deferReply({ ephemeral: true });
+
+    const result = await pool.query(
+        `UPDATE players
+         SET nickname = $1,
+             updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, nickname`,
+        [nickname, playerId]
+    );
+
+    if (!result.rows.length) {
+        return interaction.editReply({
+            content: `Nenhum jogador encontrado com o ID ${playerId}.`
+        });
+    }
+
+    const player = result.rows[0];
+
+    await interaction.editReply({
+        content:
+            `**Nickname atualizado!**\n\n` +
+            `**ID do jogador:** ${player.id}\n` +
+            `**Novo nickname:** ${player.nickname}`
     });
 }
 
@@ -375,17 +579,16 @@ discord.on("interactionCreate", async interaction => {
                 });
             }
 
-            return interaction.reply({
-                content: "Comando recebido. A alteração será conectada ao banco na próxima etapa.",
-                ephemeral: true
-            });
+            if (interaction.options.getSubcommand() === "nick") {
+                return await handlePlayerNick(interaction);
+            }
         }
 
     } catch (error) {
         console.error("Erro ao executar comando:", error);
 
         const response = {
-            content: "Ocorreu um erro ao verificar suas permissões ou executar o comando.",
+            content: "Ocorreu um erro ao executar o comando. Verifique os logs do backend.",
             ephemeral: true
         };
 
@@ -398,7 +601,7 @@ discord.on("interactionCreate", async interaction => {
 });
 
 // INICIAR BOT
-async function startDiscordBot() {
+async function startDiscordBot(databasePool) {
     if (
         !process.env.DISCORD_BOT_TOKEN ||
         !process.env.DISCORD_CLIENT_ID ||
@@ -407,10 +610,17 @@ async function startDiscordBot() {
         throw new Error("Configurações do Discord incompletas.");
     }
 
+    if (!databasePool || typeof databasePool.query !== "function") {
+        throw new Error("Conexão com o banco de dados não foi fornecida.");
+    }
+
+    pool = databasePool;
+
     await discord.login(process.env.DISCORD_BOT_TOKEN);
     await registerCommands();
 
     console.log(`Bot conectado: ${discord.user.tag}`);
+    console.log("Integração com PostgreSQL iniciada!");
 }
 
 module.exports = {
