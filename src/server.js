@@ -24,7 +24,7 @@ const pool = new Pool({
         : false
 });
 
-// Inicialização do banco
+// INICIALIZAÇÃO DO BANCO
 async function initializeDatabase() {
     const schemaPath = path.join(
         __dirname,
@@ -39,10 +39,11 @@ async function initializeDatabase() {
     console.log("Banco de dados inicializado!");
 }
 
-// Autenticação dos jogadores
+// AUTENTICAÇÃO DOS JOGADORES
 async function accountAuth(req, res, next) {
     try {
         const authorization = req.headers.authorization || "";
+
         const token = authorization.startsWith("Bearer ")
             ? authorization.slice(7)
             : "";
@@ -77,7 +78,7 @@ async function accountAuth(req, res, next) {
     }
 }
 
-// Autorização administrativa atual
+// AUTORIZAÇÃO ADMINISTRATIVA
 function adminAuth(req, res, next) {
     const key = process.env.ADMIN_API_KEY;
 
@@ -90,7 +91,7 @@ function adminAuth(req, res, next) {
     next();
 }
 
-// Página inicial
+// PÁGINA INICIAL
 app.get("/", (req, res) => {
     res.json({
         name: "Stumble Guys 0.72 Backend",
@@ -99,7 +100,7 @@ app.get("/", (req, res) => {
     });
 });
 
-// Verificar banco
+// VERIFICAR BANCO
 app.get("/health", async (req, res) => {
     try {
         await pool.query("SELECT 1");
@@ -116,7 +117,7 @@ app.get("/health", async (req, res) => {
     }
 });
 
-// Cadastro de conta
+// CADASTRO DE CONTA
 app.post("/api/auth/register", async (req, res) => {
     try {
         const token = generateAccountToken();
@@ -161,7 +162,7 @@ app.post("/api/auth/register", async (req, res) => {
     }
 });
 
-// Login automático
+// LOGIN AUTOMÁTICO
 app.post("/api/auth/login", async (req, res) => {
     try {
         const { token } = req.body;
@@ -198,7 +199,7 @@ app.post("/api/auth/login", async (req, res) => {
     }
 });
 
-// Dados da conta autenticada
+// DADOS DA CONTA AUTENTICADA
 app.get("/api/me", accountAuth, (req, res) => {
     res.json({
         success: true,
@@ -206,7 +207,7 @@ app.get("/api/me", accountAuth, (req, res) => {
     });
 });
 
-// Consultar jogador (admin)
+// CONSULTAR JOGADOR (ADMIN)
 app.get("/api/players/:id", adminAuth, async (req, res) => {
     try {
         const result = await pool.query(
@@ -222,13 +223,15 @@ app.get("/api/players/:id", adminAuth, async (req, res) => {
 
         res.json(result.rows[0]);
     } catch (error) {
+        console.error("Player lookup error:", error);
+
         res.status(500).json({
             error: "Database error"
         });
     }
 });
 
-// Alterar nickname (admin por enquanto)
+// ALTERAR NICKNAME (ADMIN)
 app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
     try {
         const { nick } = req.body;
@@ -262,13 +265,15 @@ app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
             player: result.rows[0]
         });
     } catch (error) {
+        console.error("Nickname update error:", error);
+
         res.status(500).json({
             error: "Database error"
         });
     }
 });
 
-// Criar torneio de gemas (admin por enquanto)
+// CRIAR TORNEIO (ADMIN)
 app.post("/api/tournaments", adminAuth, async (req, res) => {
     try {
         const { name, description } = req.body;
@@ -296,13 +301,15 @@ app.post("/api/tournaments", adminAuth, async (req, res) => {
             tournament: result.rows[0]
         });
     } catch (error) {
+        console.error("Tournament creation error:", error);
+
         res.status(500).json({
             error: "Database error"
         });
     }
 });
 
-// Listar torneios
+// LISTAR TORNEIOS
 app.get("/api/tournaments", async (req, res) => {
     try {
         const result = await pool.query(
@@ -311,13 +318,201 @@ app.get("/api/tournaments", async (req, res) => {
 
         res.json(result.rows);
     } catch (error) {
+        console.error("Tournament list error:", error);
+
         res.status(500).json({
             error: "Database error"
         });
     }
 });
 
-// Iniciar servidor e bot do Discord
+// INSCREVER JOGADOR EM UM TORNEIO
+app.post(
+    "/api/tournaments/:id/join",
+    accountAuth,
+    async (req, res) => {
+        const tournamentId = req.params.id;
+
+        if (!/^[1-9]\d*$/.test(tournamentId)) {
+            return res.status(400).json({
+                error: "Invalid tournament ID"
+            });
+        }
+
+        const client = await pool.connect();
+        let transactionStarted = false;
+
+        try {
+            await client.query("BEGIN");
+            transactionStarted = true;
+
+            // Bloqueia este torneio durante a inscrição.
+            const tournamentResult = await client.query(
+                `SELECT *
+                 FROM tournaments
+                 WHERE id = $1
+                 FOR UPDATE`,
+                [tournamentId]
+            );
+
+            if (!tournamentResult.rows.length) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(404).json({
+                    error: "Tournament not found"
+                });
+            }
+
+            const tournament = tournamentResult.rows[0];
+
+            if (tournament.status !== "pending") {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(409).json({
+                    error: "Tournament is not accepting registrations"
+                });
+            }
+
+            if (
+                tournament.registration_ends_at &&
+                new Date(tournament.registration_ends_at) <= new Date()
+            ) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(409).json({
+                    error: "Tournament registrations are closed"
+                });
+            }
+
+            if (
+                tournament.starts_at &&
+                new Date(tournament.starts_at) <= new Date()
+            ) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(409).json({
+                    error: "Tournament has already started"
+                });
+            }
+
+            // Impede inscrição duplicada.
+            const existing = await client.query(
+                `SELECT id
+                 FROM tournament_players
+                 WHERE tournament_id = $1
+                   AND player_id = $2`,
+                [tournamentId, req.player.id]
+            );
+
+            if (existing.rows.length) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(409).json({
+                    error: "You are already registered for this tournament"
+                });
+            }
+
+            // Verifica vagas disponíveis.
+            const countResult = await client.query(
+                `SELECT COUNT(*) AS total
+                 FROM tournament_players
+                 WHERE tournament_id = $1`,
+                [tournamentId]
+            );
+
+            const currentPlayers = Number(countResult.rows[0].total);
+
+            if (currentPlayers >= tournament.max_players) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(409).json({
+                    error: "Tournament is full"
+                });
+            }
+
+            // Desconta as gemas somente se houver saldo suficiente.
+            const entryCost = tournament.entry_cost || 0;
+
+            const balanceResult = await client.query(
+                `UPDATE players
+                 SET gems = gems - $1,
+                     updated_at = NOW()
+                 WHERE id = $2
+                   AND gems >= $1
+                 RETURNING id, nickname, gems`,
+                [entryCost, req.player.id]
+            );
+
+            if (!balanceResult.rows.length) {
+                await client.query("ROLLBACK");
+                transactionStarted = false;
+
+                return res.status(402).json({
+                    error: "Not enough gems"
+                });
+            }
+
+            // Registra a inscrição.
+            const registrationResult = await client.query(
+                `INSERT INTO tournament_players
+                 (tournament_id, player_id)
+                 VALUES ($1, $2)
+                 RETURNING id, tournament_id, player_id, joined_at`,
+                [tournamentId, req.player.id]
+            );
+
+            await client.query("COMMIT");
+            transactionStarted = false;
+
+            return res.status(201).json({
+                success: true,
+                message: "Successfully registered for tournament",
+                registration: registrationResult.rows[0],
+                tournament: {
+                    id: tournament.id,
+                    name: tournament.name
+                },
+                player: {
+                    id: balanceResult.rows[0].id,
+                    nickname: balanceResult.rows[0].nickname,
+                    gems: balanceResult.rows[0].gems
+                },
+                spots: {
+                    occupied: currentPlayers + 1,
+                    maximum: tournament.max_players
+                }
+            });
+
+        } catch (error) {
+            if (transactionStarted) {
+                await client.query("ROLLBACK").catch(() => {});
+            }
+
+            if (error.code === "23505") {
+                return res.status(409).json({
+                    error: "You are already registered for this tournament"
+                });
+            }
+
+            console.error("Tournament registration error:", error);
+
+            return res.status(500).json({
+                error: "Could not register for tournament"
+            });
+
+        } finally {
+            client.release();
+        }
+    }
+);
+
+// INICIAR SERVIDOR E BOT DO DISCORD
 async function startServer() {
     try {
         await initializeDatabase();
