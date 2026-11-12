@@ -11,7 +11,7 @@ const discord = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// OPÇÕES DE MAPAS
+// ADICIONAR MAPAS ÀS RODADAS
 function addMapOptions(command) {
     for (let i = 1; i <= 6; i++) {
         command.addStringOption(option =>
@@ -25,7 +25,7 @@ function addMapOptions(command) {
     return command;
 }
 
-// TORNEIO CLÁSSICO
+// /create - TORNEIO CLÁSSICO
 const classicCommand = addMapOptions(
     new SlashCommandBuilder()
         .setName("create")
@@ -61,87 +61,86 @@ const classicCommand = addMapOptions(
                 .setRequired(true))
 );
 
-// TORNEIO DE GEMAS
-const gemsCommand = addMapOptions(
-    new SlashCommandBuilder()
-        .setName("t")
-        .setDescription("Sistema de torneios de gemas")
-        .addSubcommand(sub =>
-            sub.setName("create")
-                .setDescription("Criar torneio de gemas")
+// /t create - TORNEIO DE GEMAS
+const gemsCommand = new SlashCommandBuilder()
+    .setName("t")
+    .setDescription("Sistema de torneios de gemas")
+    .addSubcommand(sub => {
+        let command = sub
+            .setName("create")
+            .setDescription("Criar torneio de gemas")
 
-                .addStringOption(o =>
-                    o.setName("nome")
-                        .setDescription("Nome do torneio")
-                        .setRequired(true))
+            .addStringOption(o =>
+                o.setName("nome")
+                    .setDescription("Nome do torneio")
+                    .setRequired(true))
 
-                .addIntegerOption(o =>
-                    o.setName("participantes")
-                        .setDescription("Máximo de participantes")
-                        .setMinValue(2)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("participantes")
+                    .setDescription("Máximo de participantes")
+                    .setMinValue(2)
+                    .setRequired(true))
 
-                .addIntegerOption(o =>
-                    o.setName("inicio")
-                        .setDescription("Minutos até o início do torneio")
-                        .setMinValue(1)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("inicio")
+                    .setDescription("Minutos até o início")
+                    .setMinValue(1)
+                    .setRequired(true))
 
-                .addIntegerOption(o =>
-                    o.setName("inscricoes")
-                        .setDescription("Duração das inscrições em minutos")
-                        .setMinValue(1)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("inscricoes")
+                    .setDescription("Duração das inscrições em minutos")
+                    .setMinValue(1)
+                    .setRequired(true))
 
-                .addIntegerOption(o =>
-                    o.setName("entrada")
-                        .setDescription("Custo da inscrição em gemas")
-                        .setMinValue(0)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("entrada")
+                    .setDescription("Custo da inscrição em gemas")
+                    .setMinValue(0)
+                    .setRequired(true))
 
-                .addStringOption(o =>
-                    o.setName("modo")
-                        .setDescription("Modo do torneio")
-                        .setRequired(true)
-                        .addChoices(
-                            { name: "Solo", value: "solo" },
-                            { name: "Duos", value: "duos" }
-                        ))
+            .addStringOption(o =>
+                o.setName("modo")
+                    .setDescription("Modo do torneio")
+                    .setRequired(true)
+                    .addChoices(
+                        { name: "Solo", value: "solo" },
+                        { name: "Duos", value: "duos" }
+                    ))
 
-                .addIntegerOption(o =>
-                    o.setName("top1")
-                        .setDescription("Prêmio do primeiro lugar")
-                        .setMinValue(0)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("top1")
+                    .setDescription("Prêmio do primeiro lugar")
+                    .setMinValue(0)
+                    .setRequired(true))
 
-                .addIntegerOption(o =>
-                    o.setName("rodadas")
-                        .setDescription("Quantidade de rodadas")
-                        .setMinValue(1)
-                        .setMaxValue(6)
-                        .setRequired(true))
+            .addIntegerOption(o =>
+                o.setName("rodadas")
+                    .setDescription("Quantidade de rodadas")
+                    .setMinValue(1)
+                    .setMaxValue(6)
+                    .setRequired(true))
 
-                // BANNER OPCIONAL
-                .addStringOption(o =>
-                    o.setName("banner")
-                        .setDescription("Link do banner")
-                        .setRequired(false))
+            .addStringOption(o =>
+                o.setName("banner")
+                    .setDescription("Link do banner")
+                    .setRequired(false));
 
-                // PREMIAÇÕES OPCIONAIS
-                ...Array.from({ length: 9 }, (_, i) => {
-                    const position = i + 2;
+        // TOP 2 ATÉ TOP 10 - OPCIONAIS
+        for (let i = 2; i <= 10; i++) {
+            command.addIntegerOption(o =>
+                o.setName(`top${i}`)
+                    .setDescription(`Prêmio do ${i}º lugar`)
+                    .setMinValue(0)
+                    .setRequired(false)
+            );
+        }
 
-                    return option =>
-                        option
-                            .setName(`top${position}`)
-                            .setDescription(`Prêmio do ${position}º lugar`)
-                            .setMinValue(0)
-                            .setRequired(false);
-                })
-        )
-);
+        // MAPAS DENTRO DO SUBCOMANDO
+        return addMapOptions(command);
+    });
 
-// JOGADORES
+// /player nick
 const playerCommand = new SlashCommandBuilder()
     .setName("player")
     .setDescription("Gerenciar jogadores")
@@ -158,14 +157,13 @@ const playerCommand = new SlashCommandBuilder()
                     .setRequired(true))
     );
 
-// LISTA DE COMANDOS
+// REGISTRO DOS COMANDOS
 const commands = [
     classicCommand.toJSON(),
     gemsCommand.toJSON(),
     playerCommand.toJSON()
 ];
 
-// REGISTRAR COMANDOS
 async function registerCommands() {
     const rest = new REST({ version: "10" })
         .setToken(process.env.DISCORD_BOT_TOKEN);
@@ -188,7 +186,7 @@ function hasRole(interaction, roleId) {
     }
 
     const roles = interaction.member?.roles ?? [];
-    return roles.includes(roleId);
+    return Array.isArray(roles) && roles.includes(roleId);
 }
 
 // VALIDAR MAPAS
@@ -200,7 +198,7 @@ function collectMaps(interaction, rounds) {
 
         if (i <= rounds && !map) {
             return {
-                error: `Você precisa informar o mapa da rodada ${i}.`
+                error: `Informe o mapa da rodada ${i}.`
             };
         }
 
@@ -210,15 +208,13 @@ function collectMaps(interaction, rounds) {
             };
         }
 
-        if (map) {
-            maps.push(map);
-        }
+        if (map) maps.push(map);
     }
 
     return { maps };
 }
 
-// COMANDO CLÁSSICO
+// EXECUTAR /create
 async function handleClassic(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -244,16 +240,16 @@ async function handleClassic(interaction) {
             `**Entrada:** ${entry}\n` +
             `**Prêmio:** ${prize}\n` +
             `**Participantes:** ${participants}\n` +
-            `**Rodadas:** ${rounds}\n` +
+            `**Rodadas:** ${rounds}\n\n` +
             result.maps.map((map, i) =>
                 `**Rodada ${i + 1}:** ${map}`
             ).join("\n") +
-            `\n\nConfiguração recebida. A gravação no banco será conectada na próxima etapa.`,
+            `\n\nConfiguração recebida. Ainda falta conectar ao banco de dados.`,
         ephemeral: true
     });
 }
 
-// COMANDO DE GEMAS
+// EXECUTAR /t create
 async function handleGems(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -278,7 +274,7 @@ async function handleGems(interaction) {
     for (let i = 1; i <= 10; i++) {
         const reward = interaction.options.getInteger(`top${i}`);
 
-        if (i === 1 || reward !== null) {
+        if (reward !== null) {
             rewards.push(`**Top ${i}:** ${reward} gemas`);
         }
     }
@@ -290,7 +286,7 @@ async function handleGems(interaction) {
             `**Banner:** ${banner ?? "Não informado"}\n` +
             `**Participantes:** ${participants}\n` +
             `**Início:** ${start} minutos\n` +
-            `**Inscrições abertas:** ${registration} minutos\n` +
+            `**Inscrições:** ${registration} minutos\n` +
             `**Entrada:** ${entry} gemas\n` +
             `**Modo:** ${mode}\n` +
             `**Rodadas:** ${rounds}\n\n` +
@@ -299,7 +295,7 @@ async function handleGems(interaction) {
             result.maps.map((map, i) =>
                 `**Rodada ${i + 1}:** ${map}`
             ).join("\n") +
-            `\n\nConfiguração recebida. A gravação no banco será conectada na próxima etapa.`,
+            `\n\nConfiguração recebida. Ainda falta conectar ao banco de dados.`,
         ephemeral: true
     });
 }
@@ -319,7 +315,6 @@ discord.on("interactionCreate", async interaction => {
             process.env.DISCORD_AUTHORIZED_ROLE_ID
         );
 
-        // /create: SOMENTE DONO
         if (interaction.commandName === "create") {
             if (!isOwner) {
                 return interaction.reply({
@@ -331,7 +326,6 @@ discord.on("interactionCreate", async interaction => {
             return await handleClassic(interaction);
         }
 
-        // /t create: DONO OU AUTORIZADO
         if (interaction.commandName === "t") {
             if (!isOwner && !isAuthorized) {
                 return interaction.reply({
@@ -345,7 +339,6 @@ discord.on("interactionCreate", async interaction => {
             }
         }
 
-        // /player nick: SOMENTE DONO
         if (interaction.commandName === "player") {
             if (!isOwner) {
                 return interaction.reply({
@@ -355,7 +348,7 @@ discord.on("interactionCreate", async interaction => {
             }
 
             return interaction.reply({
-                content: "Comando recebido. A alteração do nickname será conectada ao banco na próxima etapa.",
+                content: "Comando recebido. A alteração será conectada ao banco na próxima etapa.",
                 ephemeral: true
             });
         }
