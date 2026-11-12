@@ -1,9 +1,10 @@
 
 const express = require("express");
 const { Pool } = require("pg");
+const { startDiscordBot } = require("./discord");
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "32kb" }));
 
 const PORT = process.env.PORT || 3000;
 
@@ -25,11 +26,14 @@ app.get("/", (req, res) => {
 app.get("/health", async (req, res) => {
     try {
         await pool.query("SELECT 1");
+
         res.json({
             status: "healthy",
             database: "connected"
         });
     } catch (error) {
+        console.error("Health check error:", error);
+
         res.status(503).json({
             status: "unhealthy",
             database: "disconnected"
@@ -64,6 +68,7 @@ app.get("/api/players/:id", adminAuth, async (req, res) => {
 
         res.json(result.rows[0]);
     } catch (error) {
+        console.error("Player lookup error:", error);
         res.status(500).json({ error: "Database error" });
     }
 });
@@ -72,15 +77,21 @@ app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
     try {
         const { nick } = req.body;
 
-        if (typeof nick !== "string" || !nick.trim() || nick.length > 24) {
+        if (
+            typeof nick !== "string" ||
+            nick.trim().length < 4 ||
+            nick.trim().length > 20
+        ) {
             return res.status(400).json({
-                error: "Invalid nickname"
+                error: "Nickname must have between 4 and 20 characters"
             });
         }
 
         const result = await pool.query(
-            `UPDATE players SET nickname = $1
-             WHERE id = $2 RETURNING id, nickname`,
+            `UPDATE players
+             SET nickname = $1, updated_at = NOW()
+             WHERE id = $2
+             RETURNING id, nickname`,
             [nick.trim(), req.params.id]
         );
 
@@ -95,6 +106,7 @@ app.patch("/api/players/:id/nick", adminAuth, async (req, res) => {
             player: result.rows[0]
         });
     } catch (error) {
+        console.error("Nickname update error:", error);
         res.status(500).json({ error: "Database error" });
     }
 });
@@ -103,15 +115,25 @@ app.post("/api/tournaments", adminAuth, async (req, res) => {
     try {
         const { name, description } = req.body;
 
-        if (typeof name !== "string" || !name.trim() || name.length > 80) {
+        if (
+            typeof name !== "string" ||
+            !name.trim() ||
+            name.trim().length > 80
+        ) {
             return res.status(400).json({
                 error: "Invalid tournament name"
             });
         }
 
         const result = await pool.query(
-            `INSERT INTO tournaments (name, description)
-             VALUES ($1, $2) RETURNING *`,
+            `INSERT INTO tournaments (
+                tournament_type,
+                name,
+                description,
+                max_players
+            )
+            VALUES ('gems', $1, $2, 32)
+            RETURNING *`,
             [name.trim(), description || ""]
         );
 
@@ -120,6 +142,7 @@ app.post("/api/tournaments", adminAuth, async (req, res) => {
             tournament: result.rows[0]
         });
     } catch (error) {
+        console.error("Tournament creation error:", error);
         res.status(500).json({ error: "Database error" });
     }
 });
@@ -132,10 +155,30 @@ app.get("/api/tournaments", async (req, res) => {
 
         res.json(result.rows);
     } catch (error) {
+        console.error("Tournament listing error:", error);
         res.status(500).json({ error: "Database error" });
     }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Backend running on port ${PORT}`);
-});
+async function startServer() {
+    try {
+        await pool.query("SELECT 1");
+        console.log("Database connected!");
+
+        if (process.env.DISCORD_BOT_TOKEN) {
+            await startDiscordBot(pool);
+            console.log("Discord integration started!");
+        } else {
+            console.log("Discord bot token not configured.");
+        }
+
+        app.listen(PORT, "0.0.0.0", () => {
+            console.log(`Backend running on port ${PORT}`);
+        });
+    } catch (error) {
+        console.error("Startup error:", error);
+        process.exit(1);
+    }
+}
+
+startServer();
