@@ -11,7 +11,7 @@ const discord = new Client({
     intents: [GatewayIntentBits.Guilds]
 });
 
-// ADICIONAR MAPAS ÀS RODADAS
+// ADICIONAR MAPAS
 function addMapOptions(command) {
     for (let i = 1; i <= 6; i++) {
         command.addStringOption(option =>
@@ -126,7 +126,7 @@ const gemsCommand = new SlashCommandBuilder()
                     .setDescription("Link do banner")
                     .setRequired(false));
 
-        // TOP 2 ATÉ TOP 10 - OPCIONAIS
+        // TOP 2 ATÉ TOP 10
         for (let i = 2; i <= 10; i++) {
             command.addIntegerOption(o =>
                 o.setName(`top${i}`)
@@ -136,7 +136,6 @@ const gemsCommand = new SlashCommandBuilder()
             );
         }
 
-        // MAPAS DENTRO DO SUBCOMANDO
         return addMapOptions(command);
     });
 
@@ -157,7 +156,7 @@ const playerCommand = new SlashCommandBuilder()
                     .setRequired(true))
     );
 
-// REGISTRO DOS COMANDOS
+// REGISTRAR COMANDOS
 const commands = [
     classicCommand.toJSON(),
     gemsCommand.toJSON(),
@@ -179,14 +178,45 @@ async function registerCommands() {
     console.log("Comandos Slash registrados!");
 }
 
-// VERIFICAR CARGOS
-function hasRole(interaction, roleId) {
-    if (!roleId || !interaction.inGuild()) {
-        return false;
+// VERIFICAR PROPRIETÁRIO E CARGOS
+async function getPermissions(interaction) {
+    if (!interaction.inGuild() || !interaction.guild) {
+        return {
+            isOwner: false,
+            isAuthorized: false
+        };
     }
 
-    const roles = interaction.member?.roles ?? [];
-    return Array.isArray(roles) && roles.includes(roleId);
+    const guild = interaction.guild;
+
+    // O proprietário do servidor é reconhecido automaticamente
+    const isServerOwner =
+        interaction.user.id === guild.ownerId;
+
+    // Buscar os cargos atuais do membro
+    const member = await guild.members.fetch(
+        interaction.user.id
+    );
+
+    const isOwner =
+        isServerOwner ||
+        (
+            !!process.env.DISCORD_OWNER_ROLE_ID &&
+            member.roles.cache.has(
+                process.env.DISCORD_OWNER_ROLE_ID
+            )
+        );
+
+    const isAuthorized =
+        !!process.env.DISCORD_AUTHORIZED_ROLE_ID &&
+        member.roles.cache.has(
+            process.env.DISCORD_AUTHORIZED_ROLE_ID
+        );
+
+    return {
+        isOwner,
+        isAuthorized
+    };
 }
 
 // VALIDAR MAPAS
@@ -214,7 +244,7 @@ function collectMaps(interaction, rounds) {
     return { maps };
 }
 
-// EXECUTAR /create
+// /create - TORNEIO CLÁSSICO
 async function handleClassic(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -249,7 +279,7 @@ async function handleClassic(interaction) {
     });
 }
 
-// EXECUTAR /t create
+// /t create - TORNEIO DE GEMAS
 async function handleGems(interaction) {
     const rounds = interaction.options.getInteger("rodadas");
     const result = collectMaps(interaction, rounds);
@@ -305,16 +335,12 @@ discord.on("interactionCreate", async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
     try {
-        const isOwner = hasRole(
-            interaction,
-            process.env.DISCORD_OWNER_ROLE_ID
-        );
+        const {
+            isOwner,
+            isAuthorized
+        } = await getPermissions(interaction);
 
-        const isAuthorized = hasRole(
-            interaction,
-            process.env.DISCORD_AUTHORIZED_ROLE_ID
-        );
-
+        // /create: SOMENTE DONO
         if (interaction.commandName === "create") {
             if (!isOwner) {
                 return interaction.reply({
@@ -326,6 +352,7 @@ discord.on("interactionCreate", async interaction => {
             return await handleClassic(interaction);
         }
 
+        // /t create: DONO OU AUTORIZADO
         if (interaction.commandName === "t") {
             if (!isOwner && !isAuthorized) {
                 return interaction.reply({
@@ -339,6 +366,7 @@ discord.on("interactionCreate", async interaction => {
             }
         }
 
+        // /player nick: SOMENTE DONO
         if (interaction.commandName === "player") {
             if (!isOwner) {
                 return interaction.reply({
@@ -357,7 +385,7 @@ discord.on("interactionCreate", async interaction => {
         console.error("Erro ao executar comando:", error);
 
         const response = {
-            content: "Ocorreu um erro ao processar o comando.",
+            content: "Ocorreu um erro ao verificar suas permissões ou executar o comando.",
             ephemeral: true
         };
 
